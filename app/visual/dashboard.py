@@ -1,53 +1,31 @@
-# app/visual/dashboard.py
 from nicegui import ui
-import plotly.express as px
-import pandas as pd
+import matplotlib.pyplot as plt
+import io
+import base64
 
-def create_dashboard(df: pd.DataFrame, cluster_stats: pd.DataFrame):
-    """Создаёт визуализацию без верхнего layout (только контент)"""
-    with ui.column().classes('p-6 w-full items-center gap-8'):
-        ui.label("Распределение ошибок по кластерам").classes('text-xl font-semibold text-gray-800')
+def create_dashboard(df, stats):
+    ui.notify('📈 Построение графиков...', type='info')
 
-        # --- График 1: Scatter plot ---
-        fig_scatter = px.scatter(
-            df, x="parameter_value", y="export_time",
-            color="cluster", title="Ошибки по дням и параметрам",
-            hover_data=["error_code"]
-        )
-        fig_scatter.update_layout(height=500, margin=dict(l=20, r=20, t=60, b=20))
-        ui.plotly(fig_scatter).classes('w-full max-w-6xl')
+    # Таблица статистики кластеров
+    ui.label('📊 Результаты кластеризации').classes('text-xl font-bold mt-4')
 
-        # --- График 2: Box plot ---
-        ui.label("Распределение значений по кластерам").classes('text-lg font-medium mt-8 text-gray-700')
-        fig_box = px.box(
-            df, x="cluster", y="parameter_value",
-            color="cluster", points="all",
-            title="Вариации параметра внутри кластеров"
-        )
-        fig_box.update_layout(height=400, margin=dict(l=20, r=20, t=60, b=20))
-        ui.plotly(fig_box).classes('w-full max-w-5xl')
+    rows = stats.to_dict('records')
+    columns = [{'name': c, 'label': c.capitalize(), 'field': c} for c in stats.columns]
 
-        # --- Таблица статистики ---
-        ui.label("Сводная статистика по кластерам").classes('text-lg font-medium mt-10 text-gray-700')
+    ui.table(columns=columns, rows=rows).props('rows-per-page-options="[5,10,20]" rows-per-page="10"').classes('w-full max-w-3xl')
 
-        columns = [
-            {'name': 'cluster', 'label': 'Кластер', 'field': 'cluster'},
-            {'name': 'count', 'label': 'Количество записей', 'field': 'count'},
-            {'name': 'mean', 'label': 'Среднее значение параметра', 'field': 'mean'},
-            {'name': 'std', 'label': 'Отклонение', 'field': 'std'},
-        ]
+    # --- График распределения ---
+    fig, ax = plt.subplots()
+    ax.bar(stats['cluster'], stats['count'], color=['#007bff', '#ff5733', '#28a745'])
+    ax.set_xlabel('Кластер')
+    ax.set_ylabel('Количество записей')
+    ax.set_title('Распределение по кластерам')
 
-        rows = [
-            {
-                'cluster': int(row.cluster),
-                'count': int(row['count']),
-                'mean': f"{row['mean']:.2f}",
-                'std': f"{row['std']:.2f}"
-            }
-            for _, row in cluster_stats.iterrows()
-        ]
+    buffer = io.BytesIO()
+    plt.savefig(buffer, format='png')
+    buffer.seek(0)
+    img_str = base64.b64encode(buffer.read()).decode('utf-8')
+    plt.close(fig)
 
-        ui.table(columns=columns, rows=rows).classes('max-w-3xl w-full')
-
-        ui.separator()
-        ui.label("© 2025 — Анализ данных производительности").classes('text-xs opacity-60 mt-6')
+    ui.image(f'data:image/png;base64,{img_str}').classes('max-w-3xl rounded-lg shadow-lg mt-4')
+    ui.notify('✅ Готово: данные визуализированы!', type='positive')
